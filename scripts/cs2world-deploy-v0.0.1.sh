@@ -14,6 +14,7 @@
 #     - 支持免重装快捷修改端口 / PSK / 房间伪装名 / AI 整形参数，校验失败自动回滚
 
 set -Eeuo pipefail
+trap 'echo -e "\033[0;31m[ERR]\033[0m 脚本在第 ${LINENO} 行执行失败: ${BASH_COMMAND}" >&2' ERR
 
 SCRIPT_VERSION="0.0.1"
 # 如果你已将 cs2-ghost 仓库托管到 GitHub，可在此填入 "用户名/仓库名"（例如 "yourname/cs2world"），实现全自动免询问安装！
@@ -87,10 +88,18 @@ ensure_deps() {
 self_install_shortcut() {
     local src_path
     src_path="$(readlink -f "$0" 2>/dev/null || echo "$0")"
-    if [[ "${src_path}" != "${CS2WORLD_CMD}" && -f "${src_path}" ]]; then
-        cp -f "${src_path}" "${CS2WORLD_CMD}"
-        chmod 755 "${CS2WORLD_CMD}"
-        log_ok "已安装全局快捷命令：以后可直接输入 ${BOLD}cs2world${NC} 打开管理面板"
+    if [[ -f "${src_path}" && "${src_path}" != /dev/fd/* ]]; then
+        if [[ "${src_path}" != "${CS2WORLD_CMD}" ]]; then
+            cp -f "${src_path}" "${CS2WORLD_CMD}"
+            chmod 755 "${CS2WORLD_CMD}"
+            log_ok "已更新全局快捷命令：以后可直接输入 ${BOLD}cs2world${NC} 打开管理面板"
+        fi
+    elif [[ -n "${GITHUB_REPO}" ]]; then
+        if curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/cs2world-deploy-v0.0.1.sh" -o "${CS2WORLD_CMD}.tmp" 2>/dev/null; then
+            chmod 755 "${CS2WORLD_CMD}.tmp"
+            mv -f "${CS2WORLD_CMD}.tmp" "${CS2WORLD_CMD}"
+            log_ok "已安装最新全局快捷命令：以后可直接输入 ${BOLD}cs2world${NC} 打开管理面板"
+        fi
     fi
 }
 
@@ -344,8 +353,8 @@ backup_configs() {
     if [[ -f "${STATE_FILE}" ]]; then
         cp -f "${STATE_FILE}" "${BACKUP_DIR}/state-${ts}.json"
     fi
-    # 仅保留最近 10 份备份
-    ls -1t "${BACKUP_DIR}"/server-*.json 2>/dev/null | tail -n +11 | xargs -r rm -f
+    # 仅保留最近 10 份备份（首次安装目录为空时忽略 ls 非零返回值）
+    (ls -1t "${BACKUP_DIR}"/server-*.json 2>/dev/null || true) | tail -n +11 | xargs -r rm -f || true
 }
 
 render_configs() {
