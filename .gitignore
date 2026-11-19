@@ -1,5 +1,8 @@
 bin/
 dist/
+dist-v2rayn-win/*.exe
+dist-v2rayn-win/my-*.json
+dist-v2rayn-win/__pycache__/
 *.pcap
 *.pcapng
 *.etl

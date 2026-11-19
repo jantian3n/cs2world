@@ -50,6 +50,7 @@ type GNSPacketConn struct {
 }
 
 func NewServerPacketConn(raw net.PacketConn, psk string, a2sCfg a2s.ServerConfig, shaperCfg shaper.Config) (*GNSPacketConn, error) {
+	DisableUDPConnReset(raw)
 	c := &GNSPacketConn{
 		raw:       raw,
 		psk:       psk,
@@ -68,6 +69,7 @@ func NewServerPacketConn(raw net.PacketConn, psk string, a2sCfg a2s.ServerConfig
 // NewClientPacketConn performs an authentic 1-RTT X25519 PFS Valve GNS handshake
 // (ConnectRequest -> ConnectOK) with the remote server before returning the encrypted PacketConn.
 func NewClientPacketConn(raw net.PacketConn, remoteAddr net.Addr, psk string, shaperCfg shaper.Config) (*GNSPacketConn, error) {
+	DisableUDPConnReset(raw)
 	reqPkt, hsState, err := protocol.BuildConnectRequest(psk)
 	if err != nil {
 		return nil, err
@@ -84,6 +86,9 @@ func NewClientPacketConn(raw net.PacketConn, remoteAddr net.Addr, psk string, sh
 		_ = raw.SetReadDeadline(time.Now().Add(1500 * time.Millisecond))
 		n, _, rerr := raw.ReadFrom(buf)
 		if rerr != nil {
+			if isTransientUDPError(rerr) {
+				continue
+			}
 			if ne, ok := rerr.(net.Error); ok && ne.Timeout() {
 				continue
 			}
@@ -174,6 +179,9 @@ func (c *GNSPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	for {
 		n, addr, err := c.raw.ReadFrom(c.readBuf)
 		if err != nil {
+			if isTransientUDPError(err) && atomic.LoadInt32(&c.closed) == 0 {
+				continue
+			}
 			return 0, addr, err
 		}
 		pkt := c.readBuf[:n]

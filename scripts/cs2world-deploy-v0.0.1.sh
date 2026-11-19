@@ -25,6 +25,7 @@ BIN_PATH="/usr/local/bin/sing-box-cs2world"
 CONF_DIR="/usr/local/etc/cs2world"
 SERVER_CONF="${CONF_DIR}/server.json"
 CLIENT_CONF="${CONF_DIR}/client.json"
+SHARE_URI_FILE="${CONF_DIR}/share.uri"
 STATE_FILE="${CONF_DIR}/state.json"
 BACKUP_DIR="${CONF_DIR}/backups"
 SYSCTL_FILE="/etc/sysctl.d/99-cs2world-udp.conf"
@@ -516,6 +517,43 @@ render_configs() {
           fec_parity: $fec_parity
         }' > "${STATE_FILE}"
     chmod 600 "${STATE_FILE}"
+
+    # 4. 生成兼容定制版 v2rayN 的 cs2world:// 一键分享链接
+    build_share_uri "${pub_ip}" "${port}" "${psk}" "${srv_name}" "${tick_hz}" "${shaper_enabled}" "${fec_data}" "${fec_parity}" > "${SHARE_URI_FILE}"
+    chmod 600 "${SHARE_URI_FILE}"
+}
+
+build_share_uri() {
+    local pub_ip="$1"
+    local port="$2"
+    local psk="$3"
+    local srv_name="$4"
+    local tick_hz="$5"
+    local shaper_enabled="$6"
+    local fec_data="$7"
+    local fec_parity="$8"
+
+    python3 - "${pub_ip}" "${port}" "${psk}" "${srv_name}" "${tick_hz}" "${shaper_enabled}" "${fec_data}" "${fec_parity}" <<'PYEOF'
+import sys
+from urllib.parse import quote
+
+host, port, psk, remark, tick_hz, shaper_en, fec_d, fec_p = sys.argv[1:9]
+host_fmt = f"[{host}]" if ":" in host and not host.startswith("[") else host
+
+params = []
+if int(fec_d) != 10:
+    params.append(f"ds={int(fec_d)}")
+if int(fec_p) != 3:
+    params.append(f"ps={int(fec_p)}")
+if shaper_en.lower() in ("false", "0", "no"):
+    params.append("shaper=0")
+if int(tick_hz) != 64:
+    params.append(f"tick={int(tick_hz)}")
+
+query = ("?" + "&".join(params)) if params else ""
+frag = ("#" + quote(remark, safe="")) if remark else ""
+print(f"cs2world://{quote(psk, safe='')}@{host_fmt}:{int(port)}{query}{frag}")
+PYEOF
 }
 
 install_systemd_unit() {
@@ -609,15 +647,43 @@ do_install() {
     run_probe_check
 }
 
+show_share_uri() {
+    local uri=""
+    if [[ -f "${SHARE_URI_FILE}" ]]; then
+        uri="$(cat "${SHARE_URI_FILE}")"
+    elif [[ -f "${STATE_FILE}" ]]; then
+        uri="$(build_share_uri \
+            "$(jq -r '.public_ip' "${STATE_FILE}")" \
+            "$(jq -r '.port' "${STATE_FILE}")" \
+            "$(jq -r '.psk' "${STATE_FILE}")" \
+            "$(jq -r '.server_name' "${STATE_FILE}")" \
+            "$(jq -r '.tick_rate_hz' "${STATE_FILE}")" \
+            "$(jq -r '.shaper_enabled' "${STATE_FILE}")" \
+            "$(jq -r '.fec_data' "${STATE_FILE}")" \
+            "$(jq -r '.fec_parity' "${STATE_FILE}")")"
+    else
+        log_warn "尚未找到已部署配置，请先执行部署。"
+        return 1
+    fi
+
+    echo -e "${BOLD}${GREEN}================ 一键分享链接 (cs2world://) ================${NC}"
+    echo -e "用法: 复制下方链接 -> 在定制版 v2rayN 主界面按 ${BOLD}Ctrl+V${NC} 直接导入"
+    echo -e "${CYAN}${uri}${NC}"
+    echo -e "${BOLD}${GREEN}============================================================${NC}"
+}
+
 show_client_config() {
     if [[ ! -f "${CLIENT_CONF}" ]]; then
         log_warn "尚未找到客户端配置文件，请先执行部署。"
         return 1
     fi
+    show_share_uri || true
+    echo ""
     echo -e "${BOLD}${GREEN}================ 客户端配置 (client.json) ================${NC}"
     echo -e "保存路径: ${CYAN}${CLIENT_CONF}${NC}"
-    echo -e "用法 1 (v2rayN): 替换 bin/sing_box/sing-box.exe -> 导入下方自定义配置"
-    echo -e "用法 2 (命令行): ./sing-box-cs2world run -c client.json"
+    echo -e "用法 1 (定制版 v2rayN): 直接复制上方 cs2world:// 链接按 Ctrl+V 导入"
+    echo -e "用法 2 (原版 v2rayN): 替换 bin/sing_box/sing-box.exe -> 导入下方自定义配置"
+    echo -e "用法 3 (命令行): ./sing-box-cs2world run -c client.json"
     echo -e "${CYAN}----------------------------------------------------------${NC}"
     cat "${CLIENT_CONF}"
     echo -e "${CYAN}----------------------------------------------------------${NC}"
@@ -782,7 +848,7 @@ show_menu() {
         echo -e "${BOLD}${CYAN}====================================================${NC}"
         echo -e "  ${GREEN}1.${NC} 一键部署 / 重装 CS2World 服务端"
         echo -e "  ${GREEN}2.${NC} 查看运行状态与监听信息"
-        echo -e "  ${GREEN}3.${NC} 查看 / 导出客户端配置 (client.json)"
+        echo -e "  ${GREEN}3.${NC} 查看 / 导出分享链接 (cs2world://) 与客户端配置"
         echo -e "  ${GREEN}4.${NC} 执行 Valve A2S_INFO 与主动探测防伪自检"
         echo -e "  ${GREEN}5.${NC} 快捷修改配置 (端口 / 轮换 PSK / 房间名 / AI 整形)"
         echo -e "  ${GREEN}6.${NC} 重启服务"
@@ -811,6 +877,7 @@ case "${1:-}" in
     install)   do_install ;;
     status)    show_status ;;
     client)    show_client_config ;;
+    uri|link)  show_share_uri ;;
     probe)     run_probe_check ;;
     modify)    do_modify ;;
     restart)   require_root && systemctl restart "${SERVICE_NAME}" && log_ok "已重启 ${SERVICE_NAME}" ;;
@@ -818,7 +885,7 @@ case "${1:-}" in
     uninstall) do_uninstall ;;
     ""|menu)   show_menu ;;
     *)
-        echo "用法: cs2world [install|status|client|probe|modify|restart|log|uninstall]"
+        echo "用法: cs2world [install|status|client|uri|probe|modify|restart|log|uninstall]"
         exit 1
         ;;
 esac

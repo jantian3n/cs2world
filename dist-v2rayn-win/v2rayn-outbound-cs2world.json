@@ -1,0 +1,21 @@
+{
+  "type": "cs2world",
+  "tag": "proxy",
+  "server": "YOUR_VPS_IP",
+  "server_port": 27015,
+  "psk": "YOUR_PSK",
+  "kcp": {
+    "data_shards": 10,
+    "parity_shards": 3,
+    "mtu": 1180,
+    "snd_wnd": 1024,
+    "rcv_wnd": 1024
+  },
+  "shaper": {
+    "enabled": true,
+    "tick_rate_hz": 64,
+    "idle_sleep_seconds": 600,
+    "combat_mean_bytes": 180,
+    "fastdl_chunk_size": 1248
+  }
+}
