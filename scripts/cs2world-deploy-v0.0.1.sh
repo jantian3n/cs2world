@@ -391,7 +391,7 @@ render_configs() {
             {
               type: "cs2world",
               tag: "cs2world-in",
-              listen: "::",
+              listen: "0.0.0.0",
               listen_port: $port,
               psk: $psk,
               kcp: {
