@@ -1,0 +1,33 @@
+{
+  "mode": "server",
+  "listen_addr": "0.0.0.0:27015",
+  "target_addr": "127.0.0.1:10086",
+  "psk": "change-me-to-a-strong-random-key-2026",
+  "kcp": {
+    "data_shards": 10,
+    "parity_shards": 3,
+    "mtu": 1180,
+    "snd_wnd": 1024,
+    "rcv_wnd": 1024
+  },
+  "a2s": {
+    "server_name": "[Asia/HK] CS2 5v5 Competitive Practice #3 | 128Tick",
+    "maps": [
+      "de_mirage",
+      "de_inferno",
+      "de_dust2",
+      "de_ancient",
+      "de_nuke"
+    ],
+    "max_players": 20,
+    "game_version": "1.40.4.2",
+    "map_cycle_minutes": 30
+  },
+  "shaper": {
+    "enabled": true,
+    "tick_rate_hz": 64,
+    "idle_sleep_seconds": 600,
+    "combat_mean_bytes": 240,
+    "fastdl_chunk_size": 1248
+  }
+}

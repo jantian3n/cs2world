@@ -1,0 +1,22 @@
+{
+  "log": {
+    "level": "info"
+  },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "127.0.0.1",
+      "listen_port": 7890
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "vless",
+      "tag": "cs2-ghost-out",
+      "server": "127.0.0.1",
+      "server_port": 9000,
+      "uuid": "550e8400-e29b-41d4-a716-446655440000"
+    }
+  ]
+}

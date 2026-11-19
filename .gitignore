@@ -1,0 +1,7 @@
+bin/
+dist/
+*.pcap
+*.pcapng
+*.etl
+.DS_Store
+configs/my_client.json

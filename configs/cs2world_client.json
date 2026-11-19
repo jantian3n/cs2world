@@ -1,0 +1,44 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "127.0.0.1",
+      "listen_port": 7890
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "cs2world",
+      "tag": "cs2world-out",
+      "server": "127.0.0.1",
+      "server_port": 27015,
+      "psk": "change-me-to-a-strong-random-key-2026",
+      "kcp": {
+        "data_shards": 10,
+        "parity_shards": 3,
+        "mtu": 1180,
+        "snd_wnd": 1024,
+        "rcv_wnd": 1024
+      },
+      "shaper": {
+        "enabled": true,
+        "tick_rate_hz": 64,
+        "idle_sleep_seconds": 600,
+        "combat_mean_bytes": 180,
+        "fastdl_chunk_size": 1248
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "final": "cs2world-out"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "inbounds": [
+    {
+      "type": "cs2world",
+      "tag": "cs2world-in",
+      "listen": "0.0.0.0",
+      "listen_port": 27015,
+      "psk": "change-me-to-a-strong-random-key-2026",
+      "kcp": {
+        "data_shards": 10,
+        "parity_shards": 3,
+        "mtu": 1180,
+        "snd_wnd": 1024,
+        "rcv_wnd": 1024
+      },
+      "a2s": {
+        "server_name": "[Asia/HK] CS2 5v5 Competitive Practice #3 | 128Tick",
+        "maps": [
+          "de_mirage",
+          "de_inferno",
+          "de_dust2",
+          "de_ancient",
+          "de_nuke"
+        ],
+        "max_players": 20,
+        "game_version": "1.40.4.2",
+        "map_cycle_minutes": 30
+      },
+      "shaper": {
+        "enabled": true,
+        "tick_rate_hz": 64,
+        "idle_sleep_seconds": 600,
+        "combat_mean_bytes": 240,
+        "fastdl_chunk_size": 1248
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ]
+}

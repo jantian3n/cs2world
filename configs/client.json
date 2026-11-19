@@ -1,0 +1,20 @@
+{
+  "mode": "client",
+  "listen_addr": "127.0.0.1:9000",
+  "target_addr": "127.0.0.1:27015",
+  "psk": "change-me-to-a-strong-random-key-2026",
+  "kcp": {
+    "data_shards": 10,
+    "parity_shards": 3,
+    "mtu": 1180,
+    "snd_wnd": 1024,
+    "rcv_wnd": 1024
+  },
+  "shaper": {
+    "enabled": true,
+    "tick_rate_hz": 64,
+    "idle_sleep_seconds": 600,
+    "combat_mean_bytes": 180,
+    "fastdl_chunk_size": 1248
+  }
+}
