@@ -124,11 +124,14 @@ build_from_github_source() {
     local workdir swap_file=""
     workdir="$(mktemp -d /tmp/cs2world-build.XXXXXX)"
     cleanup_build() {
-        if [[ -n "${swap_file}" && -f "${swap_file}" ]]; then
+        trap - RETURN
+        if [[ -n "${swap_file:-}" && -f "${swap_file:-}" ]]; then
             swapoff "${swap_file}" >/dev/null 2>&1 || true
             rm -f "${swap_file}"
         fi
-        rm -rf "${workdir}"
+        if [[ -n "${workdir:-}" && -d "${workdir:-}" ]]; then
+            rm -rf "${workdir}"
+        fi
     }
     trap cleanup_build RETURN
 
