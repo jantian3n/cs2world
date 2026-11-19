@@ -19,7 +19,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: 'stable'
 
       - name: Determine Version
         id: ver
@@ -41,6 +41,7 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags "${TAGS}" -trimpath -ldflags="${LDFLAGS}" -o dist/sing-box-cs2world-linux-amd64 ./cmd/sing-box-cs2world
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -tags "${TAGS}" -trimpath -ldflags="${LDFLAGS}" -o dist/sing-box-cs2world-linux-arm64 ./cmd/sing-box-cs2world
           CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -tags "${TAGS}" -trimpath -ldflags="${LDFLAGS}" -o dist/sing-box-cs2world-darwin-arm64 ./cmd/sing-box-cs2world
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -tags "${TAGS}" -trimpath -ldflags="${LDFLAGS}" -o dist/sing-box-cs2world-darwin-amd64 ./cmd/sing-box-cs2world
           CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags "${TAGS}" -trimpath -ldflags="${LDFLAGS}" -o dist/sing-box-cs2world-windows-amd64.exe ./cmd/sing-box-cs2world
 
           cd dist && sha256sum * > SHA256SUMS.txt
