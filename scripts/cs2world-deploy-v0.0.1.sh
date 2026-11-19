@@ -338,8 +338,14 @@ open_firewall_udp() {
         firewall-cmd --permanent --add-port="${port}/udp" >/dev/null 2>&1 || true
         firewall-cmd --reload >/dev/null 2>&1 || true
         log_ok "已在 Firewalld 放行 UDP ${port}"
-    else
-        log_warn "未检测到活跃的 UFW/Firewalld，如使用云厂商安全组请手动放行 UDP ${port}"
+    fi
+    # 针对 Oracle Cloud (甲骨文云) 默认 iptables REJECT 规则，显式在 INPUT 链顶部插入 UDP 放行
+    if command -v iptables >/dev/null 2>&1; then
+        if ! iptables -C INPUT -p udp --dport "${port}" -j ACCEPT >/dev/null 2>&1; then
+            iptables -I INPUT 1 -p udp --dport "${port}" -j ACCEPT >/dev/null 2>&1 || true
+            command -v netfilter-persistent >/dev/null 2>&1 && netfilter-persistent save >/dev/null 2>&1 || true
+            log_ok "已在 iptables INPUT 链顶部放行 UDP ${port}（适配甲骨文云等镜像）"
+        fi
     fi
 }
 
