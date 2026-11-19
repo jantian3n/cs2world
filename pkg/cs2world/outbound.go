@@ -8,6 +8,7 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/outbound"
+	"github.com/sagernet/sing-box/common/dialer"
 	"github.com/sagernet/sing-box/log"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/logger"
@@ -28,6 +29,8 @@ var _ adapter.Outbound = (*Outbound)(nil)
 
 type Outbound struct {
 	outbound.Adapter
+	ctx       context.Context
+	dialer    N.Dialer
 	logger    logger.ContextLogger
 	options   OutboundOptions
 	uotClient *uot.Client
@@ -46,8 +49,15 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 	}
 	options.KCP.applyDefaults()
 
+	outboundDialer, err := dialer.New(ctx, options.DialerOptions, options.ServerIsDomain())
+	if err != nil {
+		return nil, err
+	}
+
 	o := &Outbound{
 		Adapter: outbound.NewAdapterWithDialerOptions(TypeCS2World, tag, []string{N.NetworkTCP, N.NetworkUDP}, options.DialerOptions),
+		ctx:     ctx,
+		dialer:  outboundDialer,
 		logger:  logger,
 		options: options,
 	}
@@ -80,12 +90,14 @@ func (o *Outbound) openStream() (*smux.Stream, error) {
 		return nil, E.Cause(err, "resolve cs2world server ", remoteStr)
 	}
 
-	rawConn, err := net.ListenUDP("udp", nil)
+	rawConn, err := o.dialer.ListenPacket(o.ctx, M.SocksaddrFromNet(remoteUDP))
 	if err != nil {
 		return nil, E.Cause(err, "open local udp socket for cs2world")
 	}
-	_ = rawConn.SetReadBuffer(4 * 1024 * 1024)
-	_ = rawConn.SetWriteBuffer(4 * 1024 * 1024)
+	if udpConn, ok := rawConn.(*net.UDPConn); ok {
+		_ = udpConn.SetReadBuffer(4 * 1024 * 1024)
+		_ = udpConn.SetWriteBuffer(4 * 1024 * 1024)
+	}
 
 	gnsConn, err := transport.NewClientPacketConn(rawConn, remoteUDP, o.options.PSK, o.options.Shaper)
 	if err != nil {
