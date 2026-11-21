@@ -325,12 +325,17 @@ pub fn extract_conn_id(packet: &[u8]) -> Option<u32> {
     Some(u32::from_le_bytes(word4(&packet[1..5])))
 }
 /// Extract client `connection_id` (protobuf field 1, fixed32, tag 0x0d) from a real Valve GNS
-/// `0x20` ChallengeRequest so our `0x24` ConnectionClosed matches the pending CS2 socket handle.
+/// `0x20` ChallengeRequest (padded wire format: `[0]=0x20, [1..3]=u16 LE proto len, [3..3+len]=proto, [..512]=0x00`).
 fn extract_valve_challenge_conn_id(incoming: &[u8]) -> u32 {
-    if incoming.len() < 6 || incoming[0] != VALVE_CHALLENGE_REQUEST {
+    if incoming.len() < 8 || incoming[0] != VALVE_CHALLENGE_REQUEST {
         return 0;
     }
-    let body = &incoming[1..];
+    let proto_len = u16::from_le_bytes([incoming[1], incoming[2]]) as usize;
+    let body = if proto_len > 0 && 3 + proto_len <= incoming.len() {
+        &incoming[3..3 + proto_len]
+    } else {
+        &incoming[1..]
+    };
     let mut i = 0;
     while i < body.len() {
         let tag = body[i];
@@ -368,27 +373,32 @@ fn extract_valve_challenge_conn_id(incoming: &[u8]) -> u32 {
     0
 }
 
-/// Build a genuine Valve SteamNetSockets `0x24` (`CMsgSteamSockets_UDP_ConnectionClosed`) packet
-/// so real CS2 clients cleanly display "Server is full" instead of logging an unknown lead byte.
+/// Build a genuine 512-byte padded Valve SteamNetSockets `0x24` (`CMsgSteamSockets_UDP_ConnectionClosed`)
+/// packet (`[0]=0x24, [1..3]=u16 LE proto len, [3..]=proto, zero-padded to 512B`) so real CS2 clients
+/// accept the packet and cleanly show "Server is full" instead of rejecting it as under-padded.
 pub fn reject_for_packet(incoming: &[u8]) -> Vec<u8> {
     let to_conn_id = extract_valve_challenge_conn_id(incoming);
     let reason = b"Server is full (20/20). VAC authentication required.";
-    let mut out = Vec::with_capacity(1 + 5 + 5 + 2 + reason.len() + 3);
-    out.push(VALVE_CONNECTION_CLOSED);
-    // field 4: to_connection_id (fixed32, tag = (4<<3)|5 = 0x25)
-    out.push(0x25);
-    out.extend_from_slice(&to_conn_id.to_le_bytes());
-    // field 5: from_connection_id (fixed32, tag = (5<<3)|5 = 0x2d)
-    out.push(0x2d);
-    out.extend_from_slice(&0u32.to_le_bytes());
+    let mut proto = Vec::with_capacity(2 + reason.len() + 3 + 5 + 5);
     // field 2: debug string (length-delimited, tag = (2<<3)|2 = 0x12)
-    out.push(0x12);
-    out.push(reason.len() as u8);
-    out.extend_from_slice(reason);
+    proto.push(0x12);
+    proto.push(reason.len() as u8);
+    proto.extend_from_slice(reason);
     // field 3: reason_code = 1005 (App_Generic clean disconnect, varint 0xed 0x07, tag 0x18)
-    out.push(0x18);
-    out.push(0xed);
-    out.push(0x07);
+    proto.push(0x18);
+    proto.push(0xed);
+    proto.push(0x07);
+    // field 4: to_connection_id (fixed32, tag = (4<<3)|5 = 0x25)
+    proto.push(0x25);
+    proto.extend_from_slice(&to_conn_id.to_le_bytes());
+    // field 5: from_connection_id (fixed32, tag = (5<<3)|5 = 0x2d)
+    proto.push(0x2d);
+    proto.extend_from_slice(&0u32.to_le_bytes());
+
+    let mut out = vec![0u8; 512];
+    out[0] = VALVE_CONNECTION_CLOSED;
+    out[1..3].copy_from_slice(&(proto.len() as u16).to_le_bytes());
+    out[3..3 + proto.len()].copy_from_slice(&proto);
     out
 }
 
@@ -510,13 +520,22 @@ mod tests {
     }
     #[test]
     fn valve_connection_closed_echoes_challenge_conn_id() {
-        let mut challenge = vec![VALVE_CHALLENGE_REQUEST, 0x0d];
-        challenge.extend_from_slice(&0x1234_5678u32.to_le_bytes());
-        challenge.resize(512, 0);
+        // Real Valve 0x20 ChallengeRequest: [0]=0x20, [1..3]=u16 LE len (5), [3]=0x0d, [4..8]=conn_id, zero-padded to 512B
+        let mut challenge = vec![0u8; 512];
+        challenge[0] = VALVE_CHALLENGE_REQUEST;
+        challenge[1..3].copy_from_slice(&5u16.to_le_bytes());
+        challenge[3] = 0x0d;
+        challenge[4..8].copy_from_slice(&0x1234_5678u32.to_le_bytes());
         let reply = reject_for_packet(&challenge);
+        assert_eq!(reply.len(), 512);
         assert_eq!(reply[0], VALVE_CONNECTION_CLOSED);
-        assert_eq!(reply[1], 0x25);
-        assert_eq!(&reply[2..6], &0x1234_5678u32.to_le_bytes());
+        let plen = u16::from_le_bytes([reply[1], reply[2]]) as usize;
+        assert!(plen > 10 && 3 + plen <= 512);
+        let proto = &reply[3..3 + plen];
+        let mut needle = vec![0x25u8];
+        needle.extend_from_slice(&0x1234_5678u32.to_le_bytes());
+        assert!(proto.windows(5).any(|w| w == needle.as_slice()));
+        assert_eq!(reject_packet().len(), 512);
         assert_eq!(reject_packet()[0], VALVE_CONNECTION_CLOSED);
     }
     #[test]

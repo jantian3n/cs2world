@@ -343,14 +343,18 @@ assert len(resp) > 10 and resp[:5] == b'\xff\xff\xff\xffI', f'A2S_INFO 响应异
 name = resp[6:].split(b'\x00', 1)[0].decode('utf-8', errors='replace')
 print(f'[OK] A2S_INFO 伪装正常: 房间名 = {name}')
 
-# 2) Real CS2 SteamNetSockets 0x20 ChallengeRequest -> expect 0x24 ConnectionClosed echoing conn_id
+# 2) Real CS2 SteamNetSockets 0x20 ChallengeRequest (512B padded with u16 LE length prefix)
+#    -> expect 512B padded 0x24 ConnectionClosed echoing to_connection_id
 cid = 0x20260202
-gns_req = bytes([0x20, 0x0d]) + struct.pack('<I', cid) + bytes(506)
+gns_req = bytes([0x20]) + struct.pack('<H', 5) + bytes([0x0d]) + struct.pack('<I', cid) + bytes(504)
 s.sendto(gns_req, ('127.0.0.1', port))
 resp2, _ = s.recvfrom(2048)
-assert len(resp2) >= 6 and resp2[0] == 0x24, f'GNS 拒绝帧首字节异常: 0x{resp2[0]:02x} (期望 0x24)'
-assert resp2[1] == 0x25 and struct.unpack('<I', resp2[2:6])[0] == cid, 'GNS 0x24 未正确回显 to_connection_id'
-print(f'[OK] Valve GNS 0x24 拒绝防御正常: 首字节=0x24, 回显 conn_id=0x{cid:08x}, 长度={len(resp2)}B')
+assert len(resp2) == 512 and resp2[0] == 0x24, f'GNS 拒绝帧异常: len={len(resp2)} lead=0x{resp2[0]:02x} (期望 512B 0x24)'
+plen = struct.unpack('<H', resp2[1:3])[0]
+proto = resp2[3:3 + plen]
+needle = bytes([0x25]) + struct.pack('<I', cid)
+assert needle in proto, 'GNS 0x24 未正确回显 to_connection_id'
+print(f'[OK] Valve GNS 0x24 拒绝防御正常: 512B 填充, 首字节=0x24, proto={plen}B, 回显 conn_id=0x{cid:08x}')
 PY
 }
 
