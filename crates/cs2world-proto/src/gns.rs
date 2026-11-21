@@ -384,10 +384,11 @@ pub fn reject_for_packet(incoming: &[u8]) -> Vec<u8> {
     proto.push(0x12);
     proto.push(reason.len() as u8);
     proto.extend_from_slice(reason);
-    // field 3: reason_code = 1005 (App_Generic clean disconnect, varint 0xed 0x07, tag 0x18)
+    // field 3: reason_code = 1135 (1000 + NETWORK_DISCONNECT_REJECT_SERVERFULL(135) -> #GameUI_ServerRejectServerFull)
+    // varint(1135) = [0xef, 0x08]
     proto.push(0x18);
-    proto.push(0xed);
-    proto.push(0x07);
+    proto.push(0xef);
+    proto.push(0x08);
     // field 4: to_connection_id (fixed32, tag = (4<<3)|5 = 0x25)
     proto.push(0x25);
     proto.extend_from_slice(&to_conn_id.to_le_bytes());
