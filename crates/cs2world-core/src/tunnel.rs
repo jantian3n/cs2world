@@ -5,7 +5,10 @@ mod stream;
 pub use stream::MuxStream;
 
 use crate::config::{Node, ServerConfig};
-use cs2world_proto::{a2s, gns, shaper::Shaper};
+use cs2world_proto::{
+    a2s, gns,
+    shaper::{Direction, Shaper},
+};
 use rand_core::{OsRng, RngCore};
 use session::{Endpoint, Params, Peer, Session, Shaping};
 use socket::{local_hour, now_ms, transient, udp, unix};
@@ -25,8 +28,12 @@ fn bad(e: impl std::fmt::Debug) -> io::Error {
         format!("CS2World protocol: {e:?}"),
     )
 }
-fn shaping(config: cs2world_proto::shaper::Config) -> Shaping {
-    Arc::new(StdMutex::new(Shaper::new(config, now_ms())))
+fn shaping(config: cs2world_proto::shaper::Config, dir: Direction) -> Shaping {
+    Arc::new(StdMutex::new(Shaper::new_for_direction(
+        config,
+        now_ms(),
+        dir,
+    )))
 }
 
 #[derive(Default)]
@@ -93,13 +100,15 @@ impl TunnelClient {
                                 addr,
                                 codec,
                                 kcp: self.node.kcp.clone(),
-                                shaping: shaping(self.node.shaper.clone()),
+                                shaping: shaping(self.node.shaper.clone(), Direction::Uplink),
                                 stop: self.stop.child_token(),
                             },
                             OsRng.next_u32(),
                         );
                     }
-                    rejected |= n > 0 && buf[0] == 2;
+                    rejected |= n > 0
+                        && (buf[0] == gns::CONNECTION_CLOSED
+                            || buf[0] == gns::VALVE_CONNECTION_CLOSED);
                 }
                 Ok(Err(e)) if !transient(&e) => return Err(e),
                 _ => {}
@@ -225,7 +234,6 @@ async fn serve(
     meter: Arc<WireMeter>,
 ) {
     let mut config = config_rx.borrow_and_update().clone();
-    let mut shaper = shaping(config.shaper.clone());
     let mut responder = a2s::Responder::new(config.a2s.clone(), now_ms(), local_hour(), &mut OsRng);
     let mut peers: HashMap<u32, Peer> = HashMap::new();
     let mut cleanup = time::interval(Duration::from_secs(60));
@@ -236,7 +244,6 @@ async fn serve(
             changed=config_rx.changed()=>{
                 if changed.is_err(){break;}
                 config=config_rx.borrow_and_update().clone();
-                shaper=shaping(config.shaper.clone());
                 responder=a2s::Responder::new(config.a2s.clone(),now_ms(),local_hour(),&mut OsRng);
                 continue;
             }
@@ -270,7 +277,7 @@ async fn serve(
                             addr,
                             codec,
                             kcp: config.kcp.clone(),
-                            shaping: shaper.clone(),
+                            shaping: shaping(config.shaper.clone(), Direction::Downlink),
                             stop: stop.child_token(),
                         },
                         send.clone(),
@@ -280,12 +287,12 @@ async fn serve(
                     continue;
                 }
             }
-            let _ = meter.send(&socket, &gns::reject_packet(), addr).await;
+            let _ = meter.send(&socket, &gns::reject_for_packet(pkt), addr).await;
         } else if let Some(peer) = gns::extract_conn_id(pkt).and_then(|id| peers.get(&id)) {
             // A full session queue acts like a dropped UDP datagram; KCP retransmits.
             let _ = peer.wire.try_send((pkt.to_vec(), addr));
         } else {
-            let _ = meter.send(&socket, &gns::reject_packet(), addr).await;
+            let _ = meter.send(&socket, &gns::reject_for_packet(pkt), addr).await;
         }
     }
     stop.cancel();

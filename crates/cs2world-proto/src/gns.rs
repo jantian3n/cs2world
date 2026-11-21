@@ -13,6 +13,15 @@ pub const CONNECT_REQUEST: u8 = 0x01;
 pub const CONNECTION_CLOSED: u8 = 0x02;
 pub const CONNECT_OK: u8 = 0x03;
 pub const DATA: u8 = 0x82;
+/// Real Valve GameNetworkingSockets (SteamNetSockets) UDP message lead bytes.
+pub const VALVE_CHALLENGE_REQUEST: u8 = 0x20;
+pub const VALVE_CHALLENGE_REPLY: u8 = 0x21;
+pub const VALVE_CONNECT_REQUEST: u8 = 0x22;
+pub const VALVE_CONNECT_OK: u8 = 0x23;
+pub const VALVE_CONNECTION_CLOSED: u8 = 0x24;
+pub const VALVE_NO_CONNECTION: u8 = 0x25;
+/// Real CS2 Valve SDR empirical UDP payload ceiling observed in live match captures.
+pub const VALVE_SDR_MAX_UDP: usize = 1257;
 pub const IDLE: u8 = 0;
 pub const COMBAT: u8 = 1;
 pub const FAST_DL: u8 = 2;
@@ -246,8 +255,8 @@ impl Codec {
     ) -> Result<Vec<u8>, Error> {
         let real = u16::try_from(payload.len()).map_err(|_| Error::Length)?;
         let min = OVERHEAD + payload.len();
-        let total = if min <= 1380 {
-            target.clamp(min, 1380)
+        let total = if min <= VALVE_SDR_MAX_UDP {
+            target.clamp(min, VALVE_SDR_MAX_UDP)
         } else {
             target.max(min)
         };
@@ -315,8 +324,76 @@ pub fn extract_conn_id(packet: &[u8]) -> Option<u32> {
     }
     Some(u32::from_le_bytes(word4(&packet[1..5])))
 }
+/// Extract client `connection_id` (protobuf field 1, fixed32, tag 0x0d) from a real Valve GNS
+/// `0x20` ChallengeRequest so our `0x24` ConnectionClosed matches the pending CS2 socket handle.
+fn extract_valve_challenge_conn_id(incoming: &[u8]) -> u32 {
+    if incoming.len() < 6 || incoming[0] != VALVE_CHALLENGE_REQUEST {
+        return 0;
+    }
+    let body = &incoming[1..];
+    let mut i = 0;
+    while i < body.len() {
+        let tag = body[i];
+        i += 1;
+        let wire_type = tag & 0x07;
+        if tag == 0x0d && i + 4 <= body.len() {
+            return u32::from_le_bytes(word4(&body[i..i + 4]));
+        }
+        match wire_type {
+            0 => {
+                while i < body.len() && (body[i] & 0x80) != 0 {
+                    i += 1;
+                }
+                i = i.saturating_add(1);
+            }
+            1 => i = i.saturating_add(8),
+            2 => {
+                let mut len = 0usize;
+                let mut shift = 0u32;
+                while i < body.len() && shift < 28 {
+                    let b = body[i];
+                    i += 1;
+                    len |= ((b & 0x7f) as usize) << shift;
+                    if (b & 0x80) == 0 {
+                        break;
+                    }
+                    shift += 7;
+                }
+                i = i.saturating_add(len);
+            }
+            5 => i = i.saturating_add(4),
+            _ => break,
+        }
+    }
+    0
+}
+
+/// Build a genuine Valve SteamNetSockets `0x24` (`CMsgSteamSockets_UDP_ConnectionClosed`) packet
+/// so real CS2 clients cleanly display "Server is full" instead of logging an unknown lead byte.
+pub fn reject_for_packet(incoming: &[u8]) -> Vec<u8> {
+    let to_conn_id = extract_valve_challenge_conn_id(incoming);
+    let reason = b"Server is full (20/20). VAC authentication required.";
+    let mut out = Vec::with_capacity(1 + 5 + 5 + 2 + reason.len() + 3);
+    out.push(VALVE_CONNECTION_CLOSED);
+    // field 4: to_connection_id (fixed32, tag = (4<<3)|5 = 0x25)
+    out.push(0x25);
+    out.extend_from_slice(&to_conn_id.to_le_bytes());
+    // field 5: from_connection_id (fixed32, tag = (5<<3)|5 = 0x2d)
+    out.push(0x2d);
+    out.extend_from_slice(&0u32.to_le_bytes());
+    // field 2: debug string (length-delimited, tag = (2<<3)|2 = 0x12)
+    out.push(0x12);
+    out.push(reason.len() as u8);
+    out.extend_from_slice(reason);
+    // field 3: reason_code = 1005 (App_Generic clean disconnect, varint 0xed 0x07, tag 0x18)
+    out.push(0x18);
+    out.push(0xed);
+    out.push(0x07);
+    out
+}
+
 pub fn reject_packet() -> Vec<u8> {
-    b"\x02\0\0\0\0\x8b\x13\0\0Server is full (20/20). VAC authentication required.\0".to_vec()
+    reject_for_packet(&[])
 }
 
 #[cfg(test)]
@@ -423,13 +500,24 @@ mod tests {
         let (mut resp, mut srv) = accept_request(&req, PSK, TIME, &mut server_rng()).unwrap();
         resp[53..].fill(0xaa);
         let mut client = hs.complete(&resp).unwrap();
-        for (size, target, wanted) in [(0, 0, 28), (1, 9999, 1380), (1400, 0, 1428)] {
+        for (size, target, wanted) in [(0, 0, 28), (1, 9999, VALVE_SDR_MAX_UDP), (1400, 0, 1428)] {
             let packet = client
                 .seal(&vec![1; size], 13, target, &mut client_rng())
                 .unwrap();
             assert_eq!(packet.len(), wanted);
             assert_eq!(srv.open(&packet), Ok((13, vec![1; size])));
         }
+    }
+    #[test]
+    fn valve_connection_closed_echoes_challenge_conn_id() {
+        let mut challenge = vec![VALVE_CHALLENGE_REQUEST, 0x0d];
+        challenge.extend_from_slice(&0x1234_5678u32.to_le_bytes());
+        challenge.resize(512, 0);
+        let reply = reject_for_packet(&challenge);
+        assert_eq!(reply[0], VALVE_CONNECTION_CLOSED);
+        assert_eq!(reply[1], 0x25);
+        assert_eq!(&reply[2..6], &0x1234_5678u32.to_le_bytes());
+        assert_eq!(reject_packet()[0], VALVE_CONNECTION_CLOSED);
     }
     #[test]
     fn rejects_noncontributory_public_keys_even_with_valid_mac() {

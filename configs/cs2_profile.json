@@ -1,0 +1,192 @@
+{
+  "schema_version": "1.0",
+  "source": "real CS2 Valve GNS/SDR match capture (sanitized statistics only)",
+  "tick_rate_hz": 64,
+  "gns_wire_lead_bytes": {
+    "challenge_request": "0x20",
+    "challenge_reply": "0x21",
+    "connect_request": "0x22",
+    "connect_ok": "0x23",
+    "connection_closed": "0x24",
+    "no_connection": "0x25",
+    "data_frame_primary": "0x82",
+    "data_frame_alt": "0x83"
+  },
+  "uplink": {
+    "max_udp_payload": 1069,
+    "recommended_mtu_cap": 1069,
+    "mean_bytes": 720.2,
+    "median_bytes": 802,
+    "std_bytes": 214.5,
+    "p10_bytes": 558,
+    "p90_bytes": 901,
+    "iat_median_ms": 15.62,
+    "iat_p10_ms": 14.36,
+    "iat_p90_ms": 16.49,
+    "size_histogram_64b": [
+      {
+        "range": "0-63",
+        "prob": 0.05067
+      },
+      {
+        "range": "64-127",
+        "prob": 0.00056
+      },
+      {
+        "range": "128-191",
+        "prob": 0.00034
+      },
+      {
+        "range": "192-255",
+        "prob": 0.00553
+      },
+      {
+        "range": "256-319",
+        "prob": 0.00824
+      },
+      {
+        "range": "320-383",
+        "prob": 0.01907
+      },
+      {
+        "range": "384-447",
+        "prob": 0.00327
+      },
+      {
+        "range": "448-511",
+        "prob": 0.00271
+      },
+      {
+        "range": "512-575",
+        "prob": 0.03927
+      },
+      {
+        "range": "576-639",
+        "prob": 0.16759
+      },
+      {
+        "range": "640-703",
+        "prob": 0.07076
+      },
+      {
+        "range": "704-767",
+        "prob": 0.07381
+      },
+      {
+        "range": "768-831",
+        "prob": 0.1431
+      },
+      {
+        "range": "832-895",
+        "prob": 0.29827
+      },
+      {
+        "range": "896-959",
+        "prob": 0.10202
+      },
+      {
+        "range": "960-1023",
+        "prob": 0.01377
+      },
+      {
+        "range": "1024-1087",
+        "prob": 0.00102
+      }
+    ]
+  },
+  "downlink": {
+    "max_udp_payload": 1257,
+    "recommended_mtu_cap": 1257,
+    "mean_bytes": 732.6,
+    "median_bytes": 696,
+    "std_bytes": 306.2,
+    "p10_bytes": 375,
+    "p90_bytes": 1257,
+    "iat_median_ms": 15.54,
+    "iat_p10_ms": 0.0,
+    "iat_p90_ms": 16.33,
+    "burst_le_1ms_pct": 11.0,
+    "size_histogram_64b": [
+      {
+        "range": "0-63",
+        "prob": 0.00631
+      },
+      {
+        "range": "64-127",
+        "prob": 0.01727
+      },
+      {
+        "range": "128-191",
+        "prob": 0.01251
+      },
+      {
+        "range": "192-255",
+        "prob": 0.01975
+      },
+      {
+        "range": "256-319",
+        "prob": 0.01768
+      },
+      {
+        "range": "320-383",
+        "prob": 0.03516
+      },
+      {
+        "range": "384-447",
+        "prob": 0.05739
+      },
+      {
+        "range": "448-511",
+        "prob": 0.07756
+      },
+      {
+        "range": "512-575",
+        "prob": 0.08521
+      },
+      {
+        "range": "576-639",
+        "prob": 0.09173
+      },
+      {
+        "range": "640-703",
+        "prob": 0.09028
+      },
+      {
+        "range": "704-767",
+        "prob": 0.07301
+      },
+      {
+        "range": "768-831",
+        "prob": 0.07446
+      },
+      {
+        "range": "832-895",
+        "prob": 0.06008
+      },
+      {
+        "range": "896-959",
+        "prob": 0.04943
+      },
+      {
+        "range": "960-1023",
+        "prob": 0.03371
+      },
+      {
+        "range": "1024-1087",
+        "prob": 0.02751
+      },
+      {
+        "range": "1088-1151",
+        "prob": 0.0212
+      },
+      {
+        "range": "1152-1215",
+        "prob": 0.02751
+      },
+      {
+        "range": "1216-1279",
+        "prob": 0.12223
+      }
+    ]
+  }
+}

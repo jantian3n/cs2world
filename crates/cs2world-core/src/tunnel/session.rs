@@ -239,7 +239,7 @@ impl Session {
             Err(_) if self.accept.is_some() => {
                 let _ = self
                     .meter
-                    .send(&self.socket, &gns::reject_packet(), from)
+                    .send(&self.socket, &gns::reject_for_packet(wire), from)
                     .await;
             }
             Err(_) => {}
@@ -281,7 +281,7 @@ impl Session {
         let client = forwarded.is_none();
         let mut raw = [0u8; 2048];
         let mut tick = ticker(15);
-        let mut heartbeat = ticker(cs2world_proto::shaper::DUMMY_POLL_MS);
+        let mut heartbeat = ticker(cs2world_proto::shaper::HEARTBEAT_POLL_MS);
         let mut ping = ticker(15_000);
         let mut timeout = ticker(45_000);
         let started = Instant::now();
@@ -307,7 +307,7 @@ impl Session {
                 cmd=self.received.recv(),if can_write=>{
                     self.command(cmd.ok_or_else(disconnected)?)?;
                 }
-                _=heartbeat.tick(),if client=>{
+                _=heartbeat.tick(),if self.kcp.is_some()=>{
                     let size=self.shaping.lock().unwrap().dummy(now_ms(),&mut OsRng);
                     if let Some(size)=size{
                         let wire=self.codec.seal(&[],0,size,&mut OsRng).map_err(wire_error)?;
