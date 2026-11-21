@@ -117,9 +117,8 @@ install_binary() {
     local tmp_bin="/tmp/cs2world-server.new.$$"
     rm -f "${tmp_bin}"
 
-    # 1) 优先尝试从 GitHub Releases 下载预编译 Linux 二进制
+    # 1) 优先尝试下载与当前脚本版本严格匹配的预编译二进制（不拉取可能陈旧的 latest）
     local release_urls=(
-        "https://github.com/${GITHUB_REPO}/releases/latest/download/cs2world-server-linux-${arch}"
         "https://github.com/${GITHUB_REPO}/releases/download/v${SCRIPT_VERSION}/cs2world-server-linux-${arch}"
     )
     for url in "${release_urls[@]}"; do
@@ -283,11 +282,12 @@ PY
 }
 
 write_systemd_unit() {
-    # 兼容清理可能冲突的旧 cs2world-rust 服务
+    # 兼容清理可能冲突的旧 cs2world-rust 或旧版 Go sing-box-cs2world 进程
     if systemctl is-active --quiet cs2world-rust 2>/dev/null; then
         systemctl stop cs2world-rust || true
         systemctl disable cs2world-rust || true
     fi
+    pkill -x sing-box-cs2world 2>/dev/null || true
     cat > "${SERVICE_UNIT}" <<EOF
 [Unit]
 Description=CS2World Rust Server (v${SCRIPT_VERSION})
@@ -449,7 +449,7 @@ case "${1:-}" in
     uri)             [[ -f "${SHARE_URI_FILE}" ]] && cat "${SHARE_URI_FILE}" || export_share_uri "$(detect_public_ip)" ;;
     uninstall)       uninstall_all ;;
     *)
-        if [[ ! -x "${BIN_PATH}" ]]; then
+        if [[ ! -x "${BIN_PATH}" || ! -t 0 ]]; then
             install_or_upgrade
         else
             show_menu
