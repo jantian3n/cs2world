@@ -1,6 +1,6 @@
 # CS2World 纯 Rust 核心 · 阶段 0 架构设计
 
-**审阅稿 · 2026-11-21**　协议基线 v0.0.1，Go 仓库提交 `ea7b5e100d898c8a67a25babe2be608652fbcc89`。Windows 客户端取本地工作树。本次交付是设计、字节规范与旧实现的验证结果。阶段 1 由维护者确认这份设计后开始。
+**阶段 0 设计记录 · 2026-11-21**　协议基线 v0.0.1，Go 仓库提交 `ea7b5e100d898c8a67a25babe2be608652fbcc89`。Windows 客户端取设计时的本地工作树。后续四个阶段的产物、平台实测结果与复现命令另见[运行与构建说明](../../rust-core.md)及[验证记录](../../rust-verification.md)。
 
 **建议在仓库根目录建立 Cargo workspace，把现有 Win32 工程原地纳入。** 第一项实现先证明 Rust 和 Go 能在两个方向传输同一条 TCP 流和同一组 UDP 数据报，再迁移产品入口。协议裁判选用原生 `type: cs2world` 的 sing-box 适配器。另一套 `cmd/cs2-ghost` 将每条流直接转到配置里的固定 TCP 目标，流首语义不同。[逐字段协议对照与 URI 样例](2026-11-21-cs2world-wire.md) · [Go 入站](../../../pkg/cs2world/inbound.go) · [Go 出站](../../../pkg/cs2world/outbound.go) · [固定目标入口](../../../cmd/cs2-ghost/main.go)
 

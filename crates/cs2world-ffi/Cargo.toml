@@ -1,0 +1,16 @@
+[package]
+name = "cs2world-ffi"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+cs2world-core = { path = "../cs2world-core", features = ["tun"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "net"] }
+
+[target.'cfg(target_os="android")'.dependencies]
+jni = "0.21"
+libc = "0.2"

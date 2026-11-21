@@ -1,0 +1,42 @@
+[package]
+name = "cs2world-core"
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = []
+tun = ["dep:tun-rs", "dep:netstack-smoltcp", "dep:futures-util", "dep:route_manager", "dep:dns-parser", "dep:tls-parser", "dep:httparse", "dep:tempfile"]
+
+[dependencies]
+dns-parser = { version = "0.8", optional = true }
+tls-parser = { version = "0.12", optional = true }
+httparse = { version = "1", optional = true }
+tun-rs = {version = "2.8.18", features = ["async_tokio"], optional = true}
+netstack-smoltcp = {version = "0.2.5", optional = true}
+futures-util = {version = "0.3", features = ["sink"], optional = true}
+cs2world-proto = { path = "../cs2world-proto" }
+tokio = { version = "1", features = ["net", "io-util", "sync", "rt-multi-thread", "time", "macros"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ipnet = "2"
+bytes = "1"
+hyper = {version = "1", features = ["http1", "client", "server"]}
+hyper-util = {version = "0.1", features = ["tokio"]}
+http-body-util = "0.1"
+libc = "0.2"
+socket2 = {version = "0.6", features = ["all"]}
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Networking_WinSock", "Win32_System_IO", "Win32_System_SystemInformation", "Win32_System_Com", "Win32_UI_Shell"] }
+
+[target.'cfg(any(windows, target_os="macos"))'.dependencies]
+route_manager = {version = "0.2.18", optional = true, features = ["async"]}
+
+[target.'cfg(windows)'.dependencies.tempfile]
+version = "3"
+optional = true
+
+[dev-dependencies]
+etherparse = "0.16"

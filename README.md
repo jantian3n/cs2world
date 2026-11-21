@@ -1,5 +1,7 @@
 # CS2World (`sing-box-cs2world` v0.0.1)
 
+**Rust 主线**提供内嵌核心的 Windows 客户端、Linux 静态服务端、macOS 通用命令行客户端与 SDK，以及 Android 客户端。下文介绍 Go / sing-box 适配器。 [Rust 产物、构建与验证](docs/rust-core.md)
+
 **CS2World** 是基于官方 **`sing-box v1.14.4`** 深度扩展的自定义协议内核，100% 保留官方全部协议与特性（VLESS、Reality、Hysteria2、TUN、DNS、Rule-Set、Clash API），并**原生内置了全新的 `"type": "cs2world"` 深度游戏流量拟态协议**（将跨国代理流量在字节级与统计分布级完整伪装为 **Valve Counter-Strike 2 社区私服 UDP 27015 对局流量**）。
 
 ---
@@ -20,11 +22,11 @@
    - **Steam A2S 查询防御**：收到 `0xFFFFFFFF` 开头的 `A2S_INFO` / `A2S_PLAYER` 探测包时，直接返回合法的 **Counter-Strike 2 (AppID `730`)** 房间信息（在线人数按北京时间正弦曲线动态波动，地图每 30 分钟在 `de_mirage` / `de_inferno` / `de_dust2` / `de_ancient` 间自动轮换）。
    - **陌生 GNS 连接防御**：任何未通过 PSK 校验的探测包或真实 CS2 游戏客户端连接，服务端均返回标准 Valve GNS `0x02 ConnectionClosed` 控制包（`"Server is full (20/20). VAC authentication required."`）。
 5. **AI 64-Tick 行为状态机与双峰高斯整形 (`pkg/shaper/`)**
-   - **Idle（观战心跳）**：无流量时维持 `~21Hz` 的 `72±10B` 拟态同步包，消除传统代理的“静默断崖”；闲置满 10 分钟自动进入 `Sleep` 零流量休眠。
+   - **Idle（观战心跳）**：启用整形时，客户端每 46 ms 检查是否发送空心跳。默认连续超过 10 分钟没有 KCP/FEC 写入才暂停空心跳。smux 每 15 秒发送的保活帧也会触发写入，所以应用空闲时仍可能持续发送心跳。
    - **Combat（64-Tick 对局交火）**：日常网页浏览请求按高斯分布（上行 `180±38B` / 下行 `240±38B`）动态填充随机噪声，抹平 TLS-in-TLS 握手指纹。
    - **FastDL（创意工坊地图下载）**：观看 4K 视频或大文件下载时，自动切换至 `1248B` Source 引擎标准资源分片通道。
 6. **KCP + Reed-Solomon FEC 前向纠错 + smux 多路复用**
-   - 默认开启 `10:3` 前向纠错与 64-Tick (15ms) 快速重传，在跨国晚高峰 15% UDP 丢包环境下依然保持低延迟高吞吐。
+   - Go 原生 JSON 省略 KCP 分片数时关闭 FEC。分享链接的默认值和仓库客户端、服务端示例均为 `10:3`（10 个数据分片、3 个校验分片）。KCP 更新间隔为 15 ms，启用快速重传。
 
 ---
 
@@ -59,7 +61,7 @@ cs2world uninstall  # 彻底卸载并清理
 如果你希望在本地电脑（macOS / Linux / Windows）自行编译 `sing-box-cs2world` 客户端或服务端内核，请按以下步骤操作：
 
 ### 1. 编译环境要求
-- **Go 版本**：`Go >= 1.24`（推荐 `Go 1.25+`，可从 [go.dev/dl](https://go.dev/dl/) 下载）
+- **Go 工具链**：`go.mod` 要求 Go 1.27.1 或更高版本。[下载 Go](https://go.dev/dl/)
 - **Git** 与 **Make**（可选，也可直接使用下方原生 `go build` 命令）
 
 ### 2. 克隆仓库并拉取依赖

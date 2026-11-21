@@ -8,3 +8,5 @@ dist-v2rayn-win/__pycache__/
 *.etl
 .DS_Store
 configs/my_client.json
+/target/
+!/crates/cs2world-core/vendor/wintun/bin/

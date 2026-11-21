@@ -1,0 +1,4 @@
+module CS2World {
+    header "cs2world.h"
+    export *
+}

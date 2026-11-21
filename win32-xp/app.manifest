@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity
+    version="0.1.0.0"
+    processorArchitecture="*"
+    name="jantian3n.CS2World.Win32"
+    type="win32"
+  />
+  <description>CS2World Native Windows XP-Style Client</description>
+</assembly>

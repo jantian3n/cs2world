@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["crates/*", "win32-xp"]
+default-members = ["crates/cs2world-core"]
+exclude = ["app/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+codegen-units = 1

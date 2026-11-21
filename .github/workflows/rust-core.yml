@@ -1,0 +1,283 @@
+name: Rust core and platform packages
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-core-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: cargo test --workspace --locked
+      - name: Exercise elevated Wintun adapter on a reserved /32
+        run: cargo test -p cs2world-core --locked --features tun native_device_routes_and_forwards_one_test_address -- --ignored --nocapture
+      - name: Package the Win32 client and standalone service
+        run: ./scripts/package-windows.ps1 -IncludeService
+      - name: Verify isolated Windows service lifecycle
+        run: ./tests/windows-service.ps1 -Binary dist/rust/windows-service/cs2world-server.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: dist/rust/windows/CS2World-XP.exe
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-service-x86_64
+          path: dist/rust/windows-service/cs2world-server.exe
+          if-no-files-found: error
+
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    env:
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test protocol and runtime
+        run: |
+          cargo check --locked -p cs2world-proto --target thumbv7em-none-eabi
+          cargo test --locked -p cs2world-proto -p cs2world-core -p cs2world-server -p cs2world-ffi
+      - name: Build and inspect static release
+        run: |
+          bash scripts/package-linux.sh "$ARCH"
+          bin="dist/rust/linux-$ARCH/cs2world-server"
+          "$bin" version
+          "$bin" check -c configs/cs2world_server.json
+      - name: Exercise local systemd install, reload, and rollback
+        run: |
+          bin="dist/rust/linux-$ARCH/cs2world-server"
+          jq --arg secret "$(openssl rand -hex 24)" '.inbounds[0] |= (.listen = "127.0.0.1" | .listen_port = 0 | .psk = $secret)' configs/cs2world_server.json > "$RUNNER_TEMP/initial.json"
+          sudo bash scripts/deploy-linux.sh install "$bin" "$RUNNER_TEMP/initial.json"
+          prev=$(readlink /opt/cs2world-rust/current)
+          jq '.inbounds[0].kcp.rcv_wnd += 1' "$RUNNER_TEMP/initial.json" > "$RUNNER_TEMP/replacement.json"
+          sudo bash scripts/deploy-linux.sh install "$bin" "$RUNNER_TEMP/replacement.json"
+          sudo systemctl reload cs2world-rust
+          sudo bash scripts/deploy-linux.sh rollback
+          test "$(readlink /opt/cs2world-rust/current)" = "$prev"
+          systemctl is-active --quiet cs2world-rust
+          pid=$(systemctl show -p MainPID --value cs2world-rust)
+          grep -E '^(VmRSS|Threads):' "/proc/$pid/status"
+          sudo systemctl stop cs2world-rust
+      - name: Archive executable and installer
+        run: tar -czf "dist/rust/cs2world-linux-$ARCH.tar.gz" -C "dist/rust/linux-$ARCH" cs2world-server -C "$GITHUB_WORKSPACE/scripts" deploy-linux.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/rust/cs2world-linux-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+
+  windows-interop:
+    needs: windows
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-x86_64
+          path: dist/rust/windows
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-service-x86_64
+          path: dist/rust/windows-service
+      - name: Test both directions and the packaged GUI
+        run: python -B tests/interop/run.py --rust-bin dist/rust/windows-service/cs2world-server.exe --windows-gui dist/rust/windows/CS2World-XP.exe
+
+  linux-interop:
+    needs: linux
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    env:
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/rust
+      - name: Exercise the packaged static ELF against pinned Go
+        run: |
+          mkdir -p "$RUNNER_TEMP/published"
+          tar -xzf "dist/rust/cs2world-linux-$ARCH.tar.gz" -C "$RUNNER_TEMP/published"
+          python -B tests/interop/run.py --rust-bin "$RUNNER_TEMP/published/cs2world-server"
+
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Exercise native utun on a reserved /32
+        run: |
+          cargo test -p cs2world-core --locked --features tun --lib --no-run --message-format=json > "$RUNNER_TEMP/tun-test.jsonl"
+          exe=$(jq -rs '[.[] | select(.profile.test and .executable and .target.kind == ["lib"]) | .executable] | last // empty' "$RUNNER_TEMP/tun-test.jsonl")
+          test -x "$exe"
+          sudo "$exe" native_device_routes_and_forwards_one_test_address --ignored --nocapture
+      - name: Package and verify the universal CLI, AppKit client and XCFramework
+        run: |
+          test "$(uname -m)" = arm64
+          bash clients/macos/package.sh
+      - name: Exercise the archived macOS CLI against pinned Go in both directions
+        timeout-minutes: 25
+        run: |
+          mkdir "$RUNNER_TEMP/published-cli"
+          ditto -x -k target/packages/macos/CS2World-macOS-CLI.zip "$RUNNER_TEMP/published-cli"
+          python -B tests/interop/run.py --rust-bin "$RUNNER_TEMP/published-cli/cs2world" --direction both --fec both
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macOS-universal
+          path: |
+            target/packages/macos/CS2World-macOS.zip
+            target/packages/macos/CS2World-macOS-CLI.zip
+            target/packages/macos/CS2World-xcframework.zip
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android 35 and NDK r27c
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Package APK and JNI libraries for both ABIs
+        run: |
+          python -B clients/android/package.py --with-tests
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose target/packages/android/CS2World-debug.apk
+          unzip -Z1 target/packages/android/CS2World-debug.apk | grep -Fx lib/arm64-v8a/libcs2world_ffi.so
+          unzip -Z1 target/packages/android/CS2World-debug.apk | grep -Fx lib/x86_64/libcs2world_ffi.so
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Android-client
+          path: target/packages/android/
+          if-no-files-found: error
+
+  android-device:
+    needs: android
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: Android-client
+          path: target/packages/android
+      - name: Exercise JNI and the VPN packet device on Android 35
+        timeout-minutes: 20
+        run: |
+          sdkmanager "emulator" "system-images;android-35;default;x86_64"
+          echo no | avdmanager create avd -n cs2world-ci -k "system-images;android-35;default;x86_64"
+          sudo chgrp "$(id -g)" /dev/kvm
+          sudo chmod g+rw /dev/kvm
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          "$ANDROID_HOME/emulator/emulator" -avd cs2world-ci -port 5584 -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect > "$RUNNER_TEMP/emulator.log" 2>&1 &
+          emulator_pid=$!
+          trap 'status=$?; if (( status != 0 )); then tail -80 "$RUNNER_TEMP/emulator.log"; fi; adb -s emulator-5584 emu kill || kill "$emulator_pid" || true' EXIT
+          ref="$RUNNER_TEMP/cs2world-go"
+          mkdir -p "$ref"
+          git archive ea7b5e100d898c8a67a25babe2be608652fbcc89 cmd pkg go.mod go.sum | tar -x -C "$ref"
+          go -C "$ref" build -trimpath -o "$RUNNER_TEMP/go-reference" ./cmd/sing-box-cs2world
+          timeout 300 adb -s emulator-5584 wait-for-device
+          booted=""
+          for _ in {1..120}; do
+            kill -0 "$emulator_pid"
+            booted=$(adb -s emulator-5584 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+            if [[ "$booted" == 1 ]]; then break; fi
+            sleep 2
+          done
+          test "$booted" = 1
+          python -B clients/android/test_device.py --serial emulator-5584 --go "$RUNNER_TEMP/go-reference" --artifacts target/packages/android --report target/packages/android/verification.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Android-device-verification
+          path: target/packages/android/verification.json
+          if-no-files-found: error
